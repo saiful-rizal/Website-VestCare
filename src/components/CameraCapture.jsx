@@ -1,5 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 
+const apiUrl = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+const apiKey = import.meta.env.VITE_API_KEY || "";
+
+function apiEndpoint(path) {
+  return apiUrl ? `${apiUrl}${path}` : path;
+}
+
+function websocketEndpoint(path) {
+  if (!apiUrl) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}${path}`;
+  }
+
+  const url = new URL(apiUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  if (apiKey) url.searchParams.set("api_key", apiKey);
+  return `${url.origin}${path}`;
+}
+
 function normalizeDetections(payload) {
   const items = Array.isArray(payload) ? payload : payload?.deteksi;
 
@@ -87,14 +106,13 @@ export default function CameraCapture({ onDetections }) {
       }, "image/jpeg", 0.75);
     }
 
-    const socketProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${socketProtocol}//${window.location.host}/api/detect/ws`);
+    const socket = new WebSocket(websocketEndpoint("/predict/ws"));
     socket.binaryType = "arraybuffer";
-    socket.onopen = () => {
+    socket.addEventListener("open", () => {
       socketRef.current = socket;
       setMessage("Koneksi realtime aktif.");
       frameTimerRef.current = setInterval(detectFrame, 250);
-    };
+    });
     socket.onmessage = (event) => {
       frameInFlightRef.current = false;
       try {
@@ -193,8 +211,9 @@ export default function CameraCapture({ onDetections }) {
     body.append("gambar", file);
 
     try {
-      const response = await fetch("/api/detect", {
+      const response = await fetch(apiEndpoint("/predict"), {
         method: "POST",
+        headers: apiKey ? { "X-API-Key": apiKey } : {},
         body,
       });
 
